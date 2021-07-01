@@ -1,3 +1,3 @@
 FROM zhura/public:forms
-COPY dash/ work/dash
-COPY jupyter/ work/jupyter
+COPY dash/ examples/dash
+COPY jupyter/ examples/jupyter
