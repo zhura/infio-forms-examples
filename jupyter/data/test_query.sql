@@ -1,0 +1,105 @@
+use demo_db;
+
+/* 
+name: Cohort
+depends_on:
+*/
+CREATE TEMPORARY TABLE Cohort
+AS
+SELECT ((YEAR("O"."ORIGINATION_DATE") * 100) + MONTH("O"."ORIGINATION_DATE")) AS "VINTAGE_MONTH", case when "O"."DTI" < 20 then '0-19' when "O"."DTI" < 25 then '20-24' when "O"."DTI" < 30 then '25-29' when "O"."DTI" < 35 then '30-34' when "O"."DTI" < 40 then '35-39' when "O"."DTI" < 45 then '40-44' when "O"."DTI" < 50 then '45-49' when "O"."DTI" < 60 then '50-59' else '60+' end AS "ORIGINAL_DTI_BAND", COUNT(*) AS "COUNT", SUM("O"."ORIGINAL_UPB") AS "ORIGINAL_UPB", (SUM(("O"."ORIGINAL_INTEREST_RATE" * "O"."ORIGINAL_UPB")) / SUM("O"."ORIGINAL_UPB")) AS "ORIGINAL_WAC", SUM("H"."CURRENT_ACTUAL_UPB") AS "CURRENT_ACTUAL_UPB", (SUM(("H"."CURRENT_INTEREST_RATE" * "H"."CURRENT_ACTUAL_UPB")) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "CURRENT_WAC", MIN("O"."ORIGINAL_LTV") AS "LTV_MIN", PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "O"."ORIGINAL_LTV") AS "LTV_Q25", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY "O"."ORIGINAL_LTV") AS "LTV_Q50", PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "O"."ORIGINAL_LTV") AS "LTV_Q75", MAX("O"."ORIGINAL_LTV") AS "LTV_MAX"
+FROM "DEMO_DB"."FANNIE"."ORIGINATION" "O"
+  LEFT JOIN "DEMO_DB"."FANNIE"."LOANHISTORY" "H"
+    ON "O"."LOAN_IDENTIFIER" = "H"."LOAN_IDENTIFIER"
+GROUP BY ((YEAR("O"."ORIGINATION_DATE") * 100) + MONTH("O"."ORIGINATION_DATE")), case when "O"."DTI" < 20 then '0-19' when "O"."DTI" < 25 then '20-24' when "O"."DTI" < 30 then '25-29' when "O"."DTI" < 35 then '30-34' when "O"."DTI" < 40 
+then '35-39' when "O"."DTI" < 45 then '40-44' when "O"."DTI" < 50 then '45-49' when "O"."DTI" < 60 then '50-59' else '60+' end
+;
+
+/* 
+name: CohortWeight
+depends_on:
+  - Cohort
+*/
+CREATE TEMPORARY TABLE CohortWeight
+AS
+SELECT "C"."VINTAGE_MONTH", "C"."ORIGINAL_DTI_BAND", (SUM(case when "O"."ORIGINAL_LTV" <= "C"."LTV_MIN" then "H"."CURRENT_ACTUAL_UPB" end) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "LTV_MIN_W", (SUM(case when "O"."ORIGINAL_LTV" > "C"."LTV_MIN" AND "O"."ORIGINAL_LTV" <= "C"."LTV_Q25" then "H"."CURRENT_ACTUAL_UPB" end) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "LTV_Q25_W", (SUM(case when "O"."ORIGINAL_LTV" > "C"."LTV_Q25" AND "O"."ORIGINAL_LTV" <= "C"."LTV_Q50" then "H"."CURRENT_ACTUAL_UPB" end) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "LTV_Q50_W", (SUM(case when "O"."ORIGINAL_LTV" > "C"."LTV_Q50" AND "O"."ORIGINAL_LTV" <= "C"."LTV_Q75" then "H"."CURRENT_ACTUAL_UPB" end) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "LTV_Q75_W", (SUM(case when "O"."ORIGINAL_LTV" > "C"."LTV_Q75" then "H"."CURRENT_ACTUAL_UPB" end) / SUM("H"."CURRENT_ACTUAL_UPB")) AS "LTV_MAX_W"
+FROM "DEMO_DB"."FANNIE"."ORIGINATION" "O"
+  LEFT JOIN "DEMO_DB"."FANNIE"."LOANHISTORY" "H"
+    ON "O"."LOAN_IDENTIFIER" = "H"."LOAN_IDENTIFIER"
+  LEFT JOIN Cohort "C"
+    ON "C"."VINTAGE_MONTH" = ((YEAR("O"."ORIGINATION_DATE") * 100) + MONTH("O"."ORIGINATION_DATE")) AND "C"."ORIGINAL_DTI_BAND" = case when "O"."DTI" < 20 then '0-19' when "O"."DTI" < 25 then '20-24' when "O"."DTI" < 30 then '25-29' when "O"."DTI" < 35 then '30-34' when "O"."DTI" < 40 then '35-39' when "O"."DTI" < 45 then '40-44' when "O"."DTI" < 50 then '45-49' when "O"."DTI" < 60 then '50-59' else '60+' end
+WHERE "H"."MONTHLY_REPORTING_PERIOD" = '2020-01-01'
+GROUP BY "C"."VINTAGE_MONTH", "C"."ORIGINAL_DTI_BAND"
+;
+
+/* 
+name: Pool
+depends_on:
+  - CohortWeight
+*/
+CREATE TEMPORARY TABLE Pool
+AS
+SELECT "C"."VINTAGE_MONTH", SUBSTRING("C"."VINTAGE_MONTH", 1, 4) AS "VINTAGE_YEAR", "C"."ORIGINAL_DTI_BAND", "C"."COUNT", "C"."ORIGINAL_UPB", "C"."ORIGINAL_WAC", "C"."CURRENT_ACTUAL_UPB", "C"."CURRENT_WAC", "C"."LTV_MIN", "C"."LTV_Q25", 
+"C"."LTV_Q50", "C"."LTV_Q75", "C"."LTV_MAX", "W"."LTV_MIN_W", "W"."LTV_Q25_W", "W"."LTV_Q50_W", "W"."LTV_Q75_W", "W"."LTV_MAX_W"
+FROM Cohort "C"
+  INNER JOIN CohortWeight "W"
+    ON "W"."VINTAGE_MONTH" = "C"."VINTAGE_MONTH" AND "W"."ORIGINAL_DTI_BAND" = "C"."ORIGINAL_DTI_BAND"
+WHERE (0 = 0 OR null LIKE CONCAT('%%', "C"."VINTAGE_MONTH", '%%'))
+  AND (0 = 0 OR null LIKE CONCAT('%%', "C"."ORIGINAL_DTI_BAND", '%%'))
+;
+
+/* 
+name: SqlEntity1
+depends_on:
+  - Pool
+*/
+CREATE TEMPORARY TABLE SqlEntity1
+AS
+SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", 'ltv' AS "ATTR", 'q0' AS "POINT", "P"."LTV_MIN" AS "QTILE", "P"."LTV_MIN_W" AS "QTILE_WEIGHT"
+FROM Pool "P"
+UNION ALL
+    (
+    SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", 'ltv' AS "ATTR", 'q1' AS "POINT", "P"."LTV_Q25" AS "QTILE", "P"."LTV_Q25_W" AS "QTILE_WEIGHT"
+    FROM Pool "P"
+    )
+UNION ALL
+    (
+    SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", 'ltv' AS "ATTR", 'q2' AS "POINT", "P"."LTV_Q50" AS "QTILE", "P"."LTV_Q50_W" AS "QTILE_WEIGHT"
+    FROM Pool "P"
+    )
+UNION ALL
+    (
+    SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", 'ltv' AS "ATTR", 'q3' AS "POINT", "P"."LTV_Q75" AS "QTILE", "P"."LTV_Q75_W" AS "QTILE_WEIGHT"
+    FROM Pool "P"
+    )
+UNION ALL
+    (
+    SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", 'ltv' AS "ATTR", 'q4' AS "POINT", "P"."LTV_MAX" AS "QTILE", "P"."LTV_MAX_W" AS "QTILE_WEIGHT"
+    FROM Pool "P"
+    )
+;
+
+/* 
+name: SqlEntity2
+depends_on:
+  - SqlEntity1
+*/
+CREATE TEMPORARY TABLE SqlEntity2
+AS
+SELECT "Q"."VINTAGE_MONTH", "Q"."ORIGINAL_DTI_BAND", "Q"."ATTR", "Q"."POINT", "Q"."QTILE", "Q"."QTILE_WEIGHT"
+FROM SqlEntity1 "Q"
+;
+
+/* 
+name: Query
+depends_on:
+  - SqlEntity1
+*/
+SELECT "B"."COHORT", "Q"."QTILE", SUM(("B"."BALANCE_WEIGHT" * "Q"."QTILE_WEIGHT")) AS "PROB", ROW_NUMBER() OVER (PARTITION BY "B"."COHORT" ORDER BY "Q"."QTILE" NULLS FIRST) AS "N"
+FROM (
+    SELECT "P"."VINTAGE_MONTH", "P"."ORIGINAL_DTI_BAND", "P"."VINTAGE_YEAR" AS "COHORT", "P"."CURRENT_ACTUAL_UPB" AS "BALANCE", ("P"."CURRENT_ACTUAL_UPB" / SUM("P"."CURRENT_ACTUAL_UPB") OVER (PARTITION BY "P"."VINTAGE_YEAR")) AS "BALANCE_WEIGHT"
+    FROM Pool "P"
+    ) "B"
+  INNER JOIN SqlEntity2 "Q"
+    ON "Q"."VINTAGE_MONTH" = "B"."VINTAGE_MONTH" AND "Q"."ORIGINAL_DTI_BAND" = "B"."ORIGINAL_DTI_BAND"
+GROUP BY "B"."COHORT", "Q"."QTILE"
+;

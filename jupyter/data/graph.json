@@ -1,0 +1,54 @@
+{
+  "nodes": [
+    {
+      "id": "node1",
+      "title": "Node 1",
+      "data": {
+        "caption": "Caption 11",
+        "content": "Content 11"
+      }
+    },
+    {
+      "id": "node2",
+      "title": "Node 2",
+      "data": {
+        "caption": "Caption 12",
+        "content": "Content 12"
+      }
+    },
+    {
+      "id": "node3",
+      "title": "Node 3",
+      "data": {
+        "caption": "Caption 13",
+        "content": "Content 13"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "node1",
+      "target": "node2",
+      "data": {
+        "caption": "Caption 21",
+        "content": "Content 21"
+      }
+    },
+    {
+      "source": "node3",
+      "target": "node2",
+      "data": {
+        "caption": "Caption 22",
+        "content": "Content 22"
+      }
+    },
+    {
+      "source": "node3",
+      "target": "node1",
+      "data": {
+        "caption": "Caption 23",
+        "content": "Content 23"
+      }
+    }
+  ]
+}
